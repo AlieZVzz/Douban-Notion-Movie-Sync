@@ -6,6 +6,10 @@ This script is designed to track and manage movie information by integrating wit
 
 脚本主要从RSS订阅源获取电影数据，处理信息，并将其上传到Notion数据库。为增加获取体验，脚本还与外部API（如TMDb和DeepSeek）交互，以获取额外的电影详情和优化电影名称。
 
+实现效果如图：
+<img width="1371" alt="image" src="https://github.com/user-attachments/assets/f5c82c44-6ee4-48b1-a12e-ab518caf4291" />
+
+
 ## Table of Contents
 
 - [Features]
