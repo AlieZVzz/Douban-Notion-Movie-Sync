@@ -83,7 +83,7 @@ def DataBase_item_query(query_database_id):
                'https': "http://127.0.0.1:7890"}
     url_notion_block = 'https://api.notion.com/v1/databases/' + query_database_id + '/query'
     res_notion = requests.post(url_notion_block, headers=headers)
-    logger.info(res_notion.content.decode("utf-8"))
+    # logger.info(res_notion.content.decode("utf-8"))
     # print(res_notion.content.decode("utf-8"))
     # print(res_notion.status_code)
     S_0 = res_notion.json()

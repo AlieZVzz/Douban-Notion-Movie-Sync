@@ -212,7 +212,9 @@ def film_info1(item):
 
 
 def film_info2(movie_url):
-    url = movie_url[:4] + 's' + movie_url[4:]
+    # 检测网址是否是https，不是的话更改格式为https
+    if movie_url[:5] != 'https':
+        url = movie_url[:4] + 's' + movie_url[4:]
     res = requests.get(url, headers=headers)
     bstitle = BeautifulSoup(res.text, 'html.parser')
 
@@ -274,7 +276,7 @@ if __name__ == '__main__':
     logger.info(rss_movietracker)
     notion_movies = NotionAPI.DataBase_item_query(config["databaseid"])
     watched_movie = [item['properties']['影片链接']['url'] for item in notion_movies]
-    logger.info("看过的列表有：{}", str(watched_movie))
+    # logger.info("看过的列表有：%s", watched_movie)
     for item in rss_movietracker["entries"]:
         if "看过" not in item["title"]:
             continue
