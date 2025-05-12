@@ -215,6 +215,8 @@ def film_info2(movie_url):
     # 检测网址是否是https，不是的话更改格式为https
     if movie_url[:5] != 'https':
         url = movie_url[:4] + 's' + movie_url[4:]
+    else:
+        url = movie_url
     res = requests.get(url, headers=headers)
     bstitle = BeautifulSoup(res.text, 'html.parser')
 
