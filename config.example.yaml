@@ -1,0 +1,17 @@
+# Notion API Configuration
+notion_api: "secret_your_notion_api_key_here"
+
+# Notion Database ID
+databaseid: "your_database_id_here"
+
+# TMDB API Key
+tmdb_api_key: "your_tmdb_api_key_here"
+
+# Your Douban RSS feed URL
+rss_address: "https://www.douban.com/feed/people/your_user_id/interests"
+
+# DeepSeek API Key (optional, for movie name optimization)
+deepseek_api: "your_deepseek_api_key_here"
+
+# SM.MS Token (optional, for rehosting Douban posters)
+smms_token: "your_smms_token_here"

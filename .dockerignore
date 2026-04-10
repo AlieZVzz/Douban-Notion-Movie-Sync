@@ -1,0 +1,14 @@
+.git
+.idea
+.venv
+__pycache__
+.pytest_cache
+.mypy_cache
+logs
+posters
+tests
+src/config.yaml
+*.pyc
+*.pyo
+*.pyd
+*.log

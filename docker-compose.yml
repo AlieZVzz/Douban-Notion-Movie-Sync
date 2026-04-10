@@ -1,0 +1,11 @@
+services:
+  doubannotionsync:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: doubannotionsync:latest
+    working_dir: /app
+    volumes:
+      - ./src/config.yaml:/app/src/config.yaml:ro
+      - ./posters:/app/posters
+    command: ["python", "src/main.py"]
