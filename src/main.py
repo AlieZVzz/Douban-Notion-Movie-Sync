@@ -7,12 +7,13 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import mimetypes
 import os
 import re
 import time
 from datetime import datetime
 from typing import Any, Optional
-from urllib.parse import urlencode, parse_qs, quote
+from urllib.parse import urlencode, parse_qs, quote, urlparse, unquote
 
 import feedparser
 import requests
@@ -28,7 +29,7 @@ LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d -
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"
 DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
-SMMS_UPLOAD_URL = "https://sm.ms/api/v2/upload"
+SEE_UPLOAD_URL = "https://s.ee/api/v1/file/upload"
 POSTERS_DIR = "posters"
 
 # 预编译正则表达式 (避免重复编译)
@@ -36,7 +37,7 @@ RE_POSTER_URL = re.compile(r'(?<=src=").+(?=")', re.I)
 RE_PUB_TIME = re.compile(r'(?<=. ).+\d{4}', re.S)
 RE_COMMENT = re.compile(r'(?<=<p>).+(?=</p>)', re.S)
 RE_MOVIE_TYPE = re.compile(r'(?<=类型: )[\u4e00-\u9fa5 /]+', re.S)
-RE_DIRECTOR = re.compile(r'(?<=导演: )[\u4e00-\u9fa5 /]+', re.I)
+RE_DIRECTOR = re.compile(r'导演:\s*([^,]+)', re.I)
 RE_YEAR_IN_PARENS = re.compile(r'\(\d+\)')
 
 # 月份映射
@@ -296,10 +297,20 @@ def download_img(img_url: str) -> Optional[str]:
             logger.error(f"Failed to download image. Status: {response.status_code}")
             return None
 
-        img_name = os.path.join(POSTERS_DIR, img_url.split("/")[-1])
+        os.makedirs(POSTERS_DIR, exist_ok=True)
+        parsed_path = unquote(urlparse(img_url).path)
+        file_name = os.path.basename(parsed_path)
+        if not file_name:
+            file_name = hashlib.sha256(img_url.encode("utf-8")).hexdigest()[:16]
+        if not os.path.splitext(file_name)[1]:
+            content_type = response.headers.get("content-type", "").split(";")[0].strip()
+            file_name += mimetypes.guess_extension(content_type) or ".jpg"
+
+        img_name = os.path.join(POSTERS_DIR, file_name)
         with open(img_name, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
+                if chunk:
+                    f.write(chunk)
 
         logger.info(f"Successfully downloaded image to: {img_name}")
         return img_name
@@ -308,20 +319,27 @@ def download_img(img_url: str) -> Optional[str]:
         return None
 
 
-def upload_img(path: str, smms_token: str) -> Optional[str]:
-    """上传图片到 SM.MS 图床"""
+def upload_img(path: str, image_host_token: str) -> Optional[str]:
+    """上传图片到 S.EE 图床"""
     logger.info(f"Uploading image: {path}")
     try:
         compress_image(path)
-        headers = {'Authorization': smms_token}
+        headers = {'Authorization': image_host_token}
 
         with open(path, 'rb') as f:
-            response = session.post(SMMS_UPLOAD_URL, files={'smfile': f}, headers=headers, timeout=60)
+            response = session.post(SEE_UPLOAD_URL, files={'smfile': f}, headers=headers, timeout=60)
             result = response.json()
 
-        if "data" in result:
-            uploaded_url = result['data']['url']
+        data = result.get("data")
+        if isinstance(data, dict) and data.get("url"):
+            uploaded_url = data["url"]
             logger.info(f"Successfully uploaded image. URL: {uploaded_url}")
+            return uploaded_url
+
+        repeated_images = result.get("images")
+        if result.get("code") == "image_repeated" and repeated_images:
+            uploaded_url = repeated_images[0] if isinstance(repeated_images, list) else repeated_images
+            logger.info(f"Image already exists on image host. URL: {uploaded_url}")
             return uploaded_url
 
         logger.error(f"Failed to upload image. Response: {result}")
@@ -329,6 +347,73 @@ def upload_img(path: str, smms_token: str) -> Optional[str]:
     except Exception as e:
         logger.error(f"Exception while uploading image: {e}")
         return None
+
+
+def get_configured_image_host_token(config: dict[str, Any]) -> Optional[str]:
+    """读取有效的 S.EE API key，兼容旧 smms_token 配置。"""
+    token = str(config.get("see_api_key") or config.get("smms_token") or "").strip()
+    placeholders = {"your_see_api_key_here", "your_see_api_key", "your_smms_token_here", "your_smms_token"}
+    if not token or token in placeholders:
+        return None
+    return token
+
+
+def is_usable_poster_url(poster_url: Optional[str]) -> bool:
+    """判断海报 URL 是否可直接写入 Notion。"""
+    if not poster_url:
+        return False
+    value = poster_url.strip()
+    return value.startswith(("http://", "https://")) and value != "No poster available"
+
+
+def upload_douban_cover_to_image_host(
+    cover_url: str,
+    movie_name: str,
+    image_host_token: Optional[str]
+) -> Optional[str]:
+    """下载豆瓣封面并上传到已配置的图床，避免把豆瓣原图 URL 写进 Notion。"""
+    if not cover_url:
+        return None
+    if not image_host_token:
+        logger.warning(f'S.EE API key not configured, skip Douban cover for "{movie_name}"')
+        return None
+
+    logger.info(f'Downloading Douban cover and uploading to S.EE for "{movie_name}"')
+    local_img_path = download_img(cover_url)
+    if not local_img_path:
+        logger.warning(f'Failed to download Douban cover for "{movie_name}"')
+        return None
+
+    uploaded_url = upload_img(local_img_path, image_host_token)
+    if uploaded_url:
+        logger.info(f'Successfully uploaded Douban cover to S.EE for "{movie_name}": {uploaded_url}')
+        return uploaded_url
+
+    logger.warning(f'Failed to upload Douban cover to S.EE for "{movie_name}"')
+    return None
+
+
+def resolve_poster_url(
+    config: dict[str, Any],
+    movie_name: str,
+    movie_id: Optional[int],
+    cover_url: str
+) -> str:
+    """优先使用 TMDB 海报；豆瓣封面必须先转存到图床，失败则不写封面。"""
+    if movie_id:
+        tmdb_poster_url = get_movie_poster(config["tmdb_api_key"], movie_id)
+        if is_usable_poster_url(tmdb_poster_url):
+            logger.info(f'TMDB Poster URL for "{movie_name}": {tmdb_poster_url}')
+            return tmdb_poster_url
+        logger.warning(f'No usable TMDB poster found for "{movie_name}"')
+
+    image_host_token = get_configured_image_host_token(config)
+    uploaded_cover_url = upload_douban_cover_to_image_host(cover_url, movie_name, image_host_token)
+    if uploaded_cover_url:
+        return uploaded_cover_url
+
+    logger.warning(f'No stable poster found for "{movie_name}", Notion cover will be empty')
+    return ""
 
 
 def parse_rss_item(item: dict[str, Any]) -> tuple[str, str, str, str, str]:
@@ -384,6 +469,24 @@ def parse_rss_item(item: dict[str, Any]) -> tuple[str, str, str, str, str]:
     return cover_url, watch_time, movie_url, score, comment
 
 
+def split_slash_separated_values(text: str) -> list[str]:
+    """拆分豆瓣详情页中用斜杠分隔的字段值。"""
+    return [value.strip() for value in text.split("/") if value.strip()]
+
+
+def extract_directors(content: BeautifulSoup, info_text: str) -> list[str]:
+    """从豆瓣详情页提取导演，优先使用结构化链接，保留完整英文姓名。"""
+    director_links = content.find_all("a", rel="v:directedBy")
+    directors = [link.get_text(strip=True) for link in director_links if link.get_text(strip=True)]
+    if directors:
+        return directors
+
+    director_match = RE_DIRECTOR.search(info_text)
+    if not director_match:
+        return []
+    return split_slash_separated_values(director_match.group(1))
+
+
 def fetch_movie_details(movie_url: str, request_headers: dict[str, str]) -> tuple[str, list[str], list[str]]:
     """
     从豆瓣页面获取电影详细信息
@@ -431,11 +534,10 @@ def fetch_movie_details(movie_url: str, request_headers: dict[str, str]) -> tupl
 
     # 提取类型
     type_match = RE_MOVIE_TYPE.findall(info_text)
-    movie_types = type_match[0].replace(" ", "").split("/") if type_match else []
+    movie_types = split_slash_separated_values(type_match[0].replace(" ", "")) if type_match else []
 
     # 提取导演
-    director_match = RE_DIRECTOR.findall(info_text)
-    directors = director_match[0].replace(" ", "").split("/") if director_match else []
+    directors = extract_directors(content, info_text)
 
     logger.info(f"Extracted - Title: {title}, Type: {movie_types}, Director: {directors}")
     return title, movie_types, directors
@@ -496,7 +598,6 @@ def process_movie_entry(
         return False
 
     # 额外的数据库查询确认
-    from api.notion_api import select_items_form_Databaseitems
     if select_items_form_Databaseitems(notion_movies, "影片链接", movie_url):
         logger.debug(f"Movie already in database: {movie_url}")
         return False
@@ -521,41 +622,7 @@ def process_movie_entry(
     #     logger.info(f"Retrying with optimized name: {new_name}")
     #     movie_id = search_movie(config["tmdb_api_key"], new_name)
 
-    poster_url = ""
-    if movie_id:
-        poster_url = get_movie_poster(config["tmdb_api_key"], movie_id)
-    
-    # 如果 TMDB 没有海报，使用豆瓣封面作为 fallback
-    # 通过下载到本地并上传到 SM.MS 来规避豆瓣 418 限制
-    if not poster_url and cover_url:
-        logger.info(f'Downloading Douban cover and uploading to SM.MS for "{movie_name}"')
-        # 下载豆瓣图片到本地
-        local_img_path = download_img(cover_url)
-        if local_img_path and config.get("smms_token"):
-            # 上传到 SM.MS
-            smms_token = config["smms_token"]
-            uploaded_url = upload_img(local_img_path, smms_token)
-            if uploaded_url:
-                poster_url = uploaded_url
-                logger.info(f'Successfully uploaded Douban cover to SM.MS for "{movie_name}": {poster_url}')
-                # 清理本地文件
-                try:
-                    os.remove(local_img_path)
-                except Exception as e:
-                    logger.warning(f"Failed to remove local image: {e}")
-            else:
-                logger.warning(f'Failed to upload image to SM.MS for "{movie_name}", using original URL')
-                poster_url = cover_url
-        else:
-            if not local_img_path:
-                logger.warning(f'Failed to download image for "{movie_name}", using original URL')
-            else:
-                logger.warning(f'SM.MS token not configured, using original Douban URL')
-            poster_url = cover_url
-    elif poster_url:
-        logger.info(f'TMDB Poster URL for "{movie_name}": {poster_url}')
-    else:
-        logger.warning(f'No poster found for "{movie_name}"')
+    poster_url = resolve_poster_url(config, movie_name, movie_id, cover_url)
 
     # 构建并添加条目 (如果没有海报，不包含封面字段)
     body = build_notion_body(

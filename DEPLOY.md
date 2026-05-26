@@ -36,7 +36,7 @@ cp config.example.yaml src/config.yaml
 可选项：
 
 - `deepseek_api`
-- `smms_token`
+- `see_api_key`
 
 ## 4. 构建镜像
 

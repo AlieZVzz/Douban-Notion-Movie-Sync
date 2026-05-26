@@ -10,7 +10,7 @@
 - 过滤已经存在于 Notion 数据库中的影片，避免重复导入
 - 访问豆瓣详情页并提取标题、导演、类型等信息
 - 调用 TMDb 获取电影海报
-- TMDb 无海报时，可选回退到豆瓣封面并上传到 SM.MS
+- TMDb 无海报时，可选回退到豆瓣封面并上传到 S.EE
 - 支持 Docker 单次执行
 - 支持服务器 cron 每小时执行一次
 
@@ -57,7 +57,7 @@
 可选：
 
 - DeepSeek API Key
-- SM.MS Token
+- S.EE API Key
 
 ## 配置
 
@@ -77,7 +77,7 @@ databaseid: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 tmdb_api_key: "your_tmdb_api_key"
 rss_address: "https://www.douban.com/feed/people/your_user_id/interests"
 deepseek_api: "your_deepseek_api_key"
-smms_token: "your_smms_token"
+see_api_key: "your_see_api_key"
 ```
 
 字段说明：
@@ -87,7 +87,7 @@ smms_token: "your_smms_token"
 - `tmdb_api_key`: TMDb API Key
 - `rss_address`: 豆瓣 RSS 订阅地址
 - `deepseek_api`: 可选，当前主流程未强依赖
-- `smms_token`: 可选，用于重传豆瓣海报
+- `see_api_key`: 可选，用于重传豆瓣海报。旧配置 `smms_token` 仍兼容。
 
 ## Notion 数据库字段
 
@@ -221,7 +221,7 @@ docker load -i doubannotionsync-amd64.tar
 
 ### 为什么海报有时不是 TMDb 的
 
-如果 TMDb 没有返回海报，项目会回退到豆瓣封面。配置了 `smms_token` 时，会优先上传到 SM.MS 再写入 Notion，避免直接引用豆瓣资源。
+如果 TMDb 没有返回海报，项目会回退到豆瓣封面。配置了 `see_api_key` 时，会优先上传到 S.EE 再写入 Notion，避免直接引用豆瓣资源。旧配置 `smms_token` 仍可兼容读取。
 
 ### 为什么本地构建的镜像在服务器不能直接用
 

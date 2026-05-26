@@ -7,8 +7,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import pytest
 from unittest.mock import Mock, patch, MagicMock
+from bs4 import BeautifulSoup
 from src.main import (
     remove_year, parse_rss_item, build_notion_body, 
+    resolve_poster_url, is_usable_poster_url, get_configured_image_host_token,
+    extract_directors,
     MONTH_MAP, SCORE_MAP, DEFAULT_SCORE
 )
 
@@ -114,6 +117,87 @@ def test_build_notion_body_without_poster():
     assert '封面' not in body['properties']
     assert body['properties']['名称']['title'][0]['text']['content'] == "The Matrix"
     assert len(body['properties']['导演']['multi_select']) == 2
+
+
+def test_extract_directors_keeps_full_english_names_from_structured_links():
+    """Test director extraction from Douban structured director links"""
+    soup = BeautifulSoup(
+        """
+        <div id="content">
+            <div id="info">
+                导演: <a rel="v:directedBy">Christopher Nolan</a> /
+                <a rel="v:directedBy">Jonathan Nolan</a>
+            </div>
+        </div>
+        """,
+        "html.parser",
+    )
+
+    assert extract_directors(soup, "") == ["Christopher Nolan", "Jonathan Nolan"]
+
+
+def test_extract_directors_fallback_keeps_english_last_name():
+    """Test fallback director parsing keeps full English names"""
+    soup = BeautifulSoup("<div id='content'></div>", "html.parser")
+    info_text = "导演: Sam Mendes / Christopher Nolan,编剧: Someone"
+
+    assert extract_directors(soup, info_text) == ["Sam Mendes", "Christopher Nolan"]
+
+
+def test_is_usable_poster_url_rejects_tmdb_placeholder():
+    """Test that TMDB placeholder text is not treated as a usable URL"""
+    assert is_usable_poster_url("https://image.tmdb.org/t/p/w500/poster.jpg") is True
+    assert is_usable_poster_url("No poster available") is False
+    assert is_usable_poster_url("") is False
+    assert is_usable_poster_url(None) is False
+
+
+def test_get_configured_image_host_token_filters_placeholder():
+    """Test S.EE API key config parsing"""
+    assert get_configured_image_host_token({"see_api_key": "abc123"}) == "abc123"
+    assert get_configured_image_host_token({"smms_token": "legacy-token"}) == "legacy-token"
+    assert get_configured_image_host_token({"see_api_key": "your_see_api_key_here"}) is None
+    assert get_configured_image_host_token({"smms_token": "your_smms_token_here"}) is None
+    assert get_configured_image_host_token({}) is None
+
+
+@patch("src.main.upload_douban_cover_to_image_host")
+@patch("src.main.get_movie_poster")
+def test_resolve_poster_url_uploads_douban_cover_when_tmdb_missing(mock_get_poster, mock_upload):
+    """Test Douban covers are rehosted instead of being written directly to Notion"""
+    mock_get_poster.return_value = "No poster available"
+    mock_upload.return_value = "https://s2.loli.net/poster.jpg"
+
+    result = resolve_poster_url(
+        {"tmdb_api_key": "fake_tmdb_key", "see_api_key": "fake_see_api_key"},
+        "Inception",
+        12345,
+        "https://img.doubanio.com/view/photo/s_ratio_poster/public/p123.jpg",
+    )
+
+    assert result == "https://s2.loli.net/poster.jpg"
+    mock_upload.assert_called_once_with(
+        "https://img.doubanio.com/view/photo/s_ratio_poster/public/p123.jpg",
+        "Inception",
+        "fake_see_api_key",
+    )
+
+
+@patch("src.main.upload_douban_cover_to_image_host")
+@patch("src.main.get_movie_poster")
+def test_resolve_poster_url_does_not_fallback_to_douban_url_without_token(mock_get_poster, mock_upload):
+    """Test original Douban URLs are not written to Notion when rehosting is unavailable"""
+    mock_get_poster.return_value = "No poster available"
+    mock_upload.return_value = None
+
+    result = resolve_poster_url(
+        {"tmdb_api_key": "fake_tmdb_key"},
+        "Inception",
+        12345,
+        "https://img.doubanio.com/view/photo/s_ratio_poster/public/p123.jpg",
+    )
+
+    assert result == ""
 
 
 def test_month_map_completeness():
