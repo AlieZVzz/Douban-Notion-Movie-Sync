@@ -15,3 +15,21 @@ deepseek_api: "your_deepseek_api_key_here"
 
 # S.EE API Key (optional, for rehosting Douban posters)
 see_api_key: "your_see_api_key_here"
+
+# Reliability and runtime options
+request_timeout: 30
+request_retries: 3
+item_delay_seconds: 3
+posters_dir: "posters"
+cleanup_posters: true
+
+# Optional: override these when your Notion database uses different property names
+notion_properties:
+  title: "名称"
+  watched_at: "观看时间"
+  score: "评分"
+  comment: "有啥想说的不"
+  movie_url: "影片链接"
+  genres: "类型"
+  directors: "导演"
+  poster: "封面"

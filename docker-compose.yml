@@ -7,5 +7,8 @@ services:
     working_dir: /app
     volumes:
       - ./src/config.yaml:/app/src/config.yaml:ro
-      - ./posters:/app/posters
-    command: ["python", "src/main.py"]
+      - poster-cache:/app/posters
+    command: ["python", "-m", "src.main"]
+
+volumes:
+  poster-cache:

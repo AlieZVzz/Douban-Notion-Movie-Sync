@@ -1,6 +1,5 @@
-def main():
-    print("Hello from doubannotionsync!")
-
+"""Convenience entry point for local execution."""
+from src.main import main
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

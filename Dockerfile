@@ -6,14 +6,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY requirements.txt ./
-
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY src ./src
 COPY README.md ./README.md
 COPY pyproject.toml ./pyproject.toml
+COPY src ./src
+
+RUN pip install --no-cache-dir .
 
 RUN mkdir -p /app/posters
 
-CMD ["python", "src/main.py"]
+RUN useradd --create-home --uid 10001 appuser \
+    && chown -R appuser:appuser /app
+
+USER appuser
+
+CMD ["python", "-m", "src.main"]
